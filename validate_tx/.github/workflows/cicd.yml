@@ -1,0 +1,120 @@
+name: Docker Build, Scan and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAME: your-app-name
+  REGISTRY: ghcr.io
+  TRIVY_SEVERITY: HIGH,CRITICAL
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      id: build
+      with:
+        context: .
+        file: ./Dockerfile
+        load: true  # Load image to local Docker daemon for subsequent steps
+        tags: |
+          ${{ steps.meta.outputs.tags }}
+          local-build:latest
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Run Trivy vulnerability scanner on local image
+      uses: aquasecurity/trivy-action@0.19.0
+      with:
+        image-ref: local-build:latest
+        format: sarif
+        output: trivy-results.sarif
+        severity: HIGH,CRITICAL
+        ignore-unfixed: true
+        exit-code: 1
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
+      if: always() && github.event_name != 'pull_request'
+      with:
+        sarif_file: trivy-results.sarif
+
+    - name: Fail if critical vulnerabilities found
+      run: |
+        if [ -f trivy-results.sarif ]; then
+          VULNERABILITIES=$(jq '.runs[0].results | length' trivy-results.sarif)
+          if [ "$VULNERABILITIES" -gt 0 ]; then
+            echo "❌ Critical vulnerabilities found! Build failed."
+            exit 1
+          else
+            echo "✅ No critical vulnerabilities found."
+          fi
+        fi
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: build-and-scan
+    if: success() || failure()
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      id: build
+      with:
+        context: .
+        file: ./Dockerfile
+        load: true  # Load image to local Docker daemon for subsequent steps
+        tags: |
+          ${{ steps.meta.outputs.tags }}
+          local-build:latest
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    - name: Run smoke tests
+      run: |
+        # Start container
+        docker run -d --name smoke-test-container -p 8080:8080 \
+          local-build:latest
+
+        # Wait for container to start
+        sleep 10
+
+        # Basic health check
+        curl -f http://localhost:8080/health || curl -f http://localhost:8080/ || \
+        docker logs smoke-test-container
+
+        # Check if container is running
+        docker ps | grep smoke-test-container
+
+        # Cleanup
+        docker stop smoke-test-container
+        docker rm smoke-test-container
+
+      timeout-minutes: 5
+
+    - name: Run custom smoke tests (if you have test scripts)
+      run: |
+        # If you have specific test scripts, run them here
+        if [ -f "smoke-test.sh" ]; then
+          chmod +x smoke-test.sh
+          ./smoke-test.sh
+        fi
