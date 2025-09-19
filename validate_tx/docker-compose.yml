@@ -1,0 +1,43 @@
+services:
+  validate:
+    image: validate
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - 3001:3001
+    networks:
+      docker_net:
+        ipv4_address: 192.168.25.11
+  graphana:
+    image: grafana/grafana:latest
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana-provisioning:/etc/grafana/provisioning
+    networks:
+      docker_net:
+        ipv4_address: 192.168.25.12
+  nginx:
+    image: nginx:latest
+    restart: always
+    ports:
+      - 80:80
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - validate
+    networks:
+      docker_net:
+        ipv4_address: 192.168.25.13
+  
+networks:
+  docker_net:
+    external: true
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.25.0/24
