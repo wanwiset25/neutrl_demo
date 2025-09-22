@@ -3,6 +3,6 @@ apiVersion: 1
 datasources:
   - name: validate_data
     type: prometheus
-    url: http://192.168.25.13:80
+    url: http://192.168.25.14:9090
     isDefault: true
     access: proxy

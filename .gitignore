@@ -1,1 +1,3 @@
 node_modules
+validate_tx/prometheus/data
+validate_tx/grafana-db

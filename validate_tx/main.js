@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const { error } = require("console");
 
 const app = express();
+app.use(express.json()); 
 const PORT = process.env.PORT || 3001;
 
 
@@ -47,8 +48,11 @@ const failureCounter = new client.Counter({
 
 // Metrics endpoint
 app.get("/metrics", async (req, res) => {
+    console.log("Metrics endpoint called from", req.ip, req.headers['user-agent']);
+    console.log("returning metrics", await client.register.metrics());
     res.set('Content-Type', client.register.contentType);
     res.send(await client.register.metrics());
+    
 });
 
 
